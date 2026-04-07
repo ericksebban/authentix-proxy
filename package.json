@@ -1,0 +1,9 @@
+{
+  "name": "authentix-ots-proxy",
+  "version": "1.0.0",
+  "description": "Proxy OpenTimestamps pour Authentix",
+  "main": "api/timestamp.js",
+  "engines": {
+    "node": "20.x"
+  }
+}
