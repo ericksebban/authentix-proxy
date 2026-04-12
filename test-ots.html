@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test OpenTimestamps Widget</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 600px;
+    margin: 60px auto;
+    padding: 0 20px;
+    background: #f8f9fb;
+    color: #0a0c10;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+  .sub { color: #6b7080; font-size: 14px; margin-bottom: 32px; }
+
+  .zone {
+    border: 2px dashed #c0c8d8;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    background: white;
+    transition: border-color 0.15s;
+    margin-bottom: 16px;
+  }
+  .zone:hover { border-color: #00b86b; }
+  .zone.active { border-color: #00b86b; background: #e6f9f1; }
+
+  .zone input { display: none; }
+  .zone label { cursor: pointer; font-size: 15px; font-weight: 500; }
+  .zone .hint { font-size: 13px; color: #9ba3b5; margin-top: 6px; }
+
+  .log {
+    background: #0d1117;
+    color: #e0e8d0;
+    border-radius: 10px;
+    padding: 16px;
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    min-height: 120px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .status {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    display: none;
+  }
+  .status.pending { background: #fff8e0; color: #7a5c08; display: block; }
+  .status.success { background: #e6f9f1; color: #006b3c; display: block; }
+  .status.error   { background: #fdeaea; color: #a32d2d; display: block; }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 20px;
+    background: #00b86b;
+    color: white;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    margin-top: 12px;
+    text-decoration: none;
+  }
+  .btn:disabled { background: #9ba3b5; cursor: not-allowed; }
+  .btn.dl { background: #0057ff; }
+</style>
+</head>
+<body>
+
+<h1>🔬 Test OpenTimestamps Widget</h1>
+<p class="sub">Page de test — vérifie que la librairie OTS fonctionne depuis GitHub Pages</p>
+
+<div class="zone" id="dropZone">
+  <input type="file" id="fileInput" onchange="handleFile(this.files[0])">
+  <label for="fileInput">📂 Cliquer pour choisir un fichier</label>
+  <div class="hint">ou glisser-déposer ici</div>
+</div>
+
+<div class="status" id="status"></div>
+
+<div id="actions" style="display:none; margin-bottom:16px;">
+  <a class="btn dl" id="dlBtn" download="preuve.ots">⬇️ Télécharger le fichier .ots</a>
+</div>
+
+<div class="log" id="log">En attente d'un fichier...</div>
+
+<!-- Librairie OpenTimestamps officielle -->
+<script src="https://cdn.jsdelivr.net/npm/opentimestamps@4.8.4/dist/opentimestamps.js"></script>
+
+<script>
+const logEl    = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const dropZone = document.getElementById('dropZone');
+
+function addLog(msg, color) {
+  const ts = new Date().toLocaleTimeString('fr-FR');
+  logEl.textContent += `[${ts}] ${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+  console.log(msg);
+}
+
+function setStatus(msg, type) {
+  statusEl.textContent = msg;
+  statusEl.className = 'status ' + type;
+}
+
+// Drag & drop
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('active');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('active');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+async function handleFile(file) {
+  if (!file) return;
+
+  logEl.textContent = '';
+  document.getElementById('actions').style.display = 'none';
+  setStatus('⏳ Chargement de la librairie OpenTimestamps...', 'pending');
+
+  addLog(`Fichier : ${file.name} (${(file.size/1024).toFixed(1)} Ko)`);
+
+  // Vérifier que la librairie est chargée
+  if (typeof OpenTimestamps === 'undefined') {
+    addLog('ERREUR : Librairie OpenTimestamps non chargée !');
+    addLog('Cela indique un problème de chargement du script depuis jsDelivr.');
+    setStatus('❌ Librairie non chargée — voir console', 'error');
+    return;
+  }
+
+  addLog('✓ Librairie OpenTimestamps chargée correctement');
+  setStatus('⏳ Calcul du hash SHA-256...', 'pending');
+
+  try {
+    // Lire le fichier
+    const buffer = await file.arrayBuffer();
+    const bytes  = new Uint8Array(buffer);
+
+    // Calculer le SHA-256 via la librairie
+    addLog('Calcul SHA-256 en cours...');
+    const hashOp   = new OpenTimestamps.Ops.OpSHA256();
+    const detached = OpenTimestamps.DetachedTimestampFile
+                       .fromBytes(hashOp, bytes);
+
+    const hashHex = Array.from(detached.fileDigest())
+                         .map(b => b.toString(16).padStart(2,'0'))
+                         .join('');
+    addLog(`SHA-256 : ${hashHex}`);
+    setStatus('⏳ Soumission à OpenTimestamps (Bitcoin)...', 'pending');
+
+    // Soumettre aux serveurs de calendrier
+    addLog('Soumission aux serveurs OpenTimestamps...');
+    addLog('(Cela peut prendre 10 à 30 secondes)');
+
+    await OpenTimestamps.stamp(detached);
+
+    addLog('✓ Réponse reçue des serveurs de calendrier !');
+
+    // Sérialiser en bytes pour créer le vrai fichier .ots
+    const otsBytes = detached.serializeToBytes();
+    addLog(`Taille du fichier .ots : ${otsBytes.length} bytes`);
+
+    if (otsBytes.length < 50) {
+      throw new Error('Fichier .ots trop petit — ancrage non confirmé');
+    }
+
+    // Créer le blob téléchargeable
+    const blob = new Blob([otsBytes], { type: 'application/octet-stream' });
+    const url  = URL.createObjectURL(blob);
+    const dlBtn = document.getElementById('dlBtn');
+    dlBtn.href     = url;
+    dlBtn.download = file.name + '.ots';
+    document.getElementById('actions').style.display = 'block';
+
+    // Encoder en base64 pour stockage
+    const b64 = btoa(String.fromCharCode(...otsBytes));
+    addLog(`Base64 (50 premiers chars) : ${b64.substring(0,50)}...`);
+    addLog('');
+    addLog('✅ SUCCÈS — Le fichier .ots est valide et téléchargeable.');
+    addLog('Copiez le base64 ci-dessous pour vérifier le stockage Google Sheets :');
+    addLog(b64);
+
+    setStatus('✅ Ancrage soumis avec succès ! Téléchargez le fichier .ots.', 'success');
+
+  } catch(e) {
+    addLog(`ERREUR : ${e.message}`);
+    addLog('');
+    addLog('Détails techniques :');
+    addLog(e.stack || String(e));
+    setStatus('❌ Erreur — voir les logs ci-dessous', 'error');
+  }
+}
+</script>
+</body>
+</html>
